@@ -3,34 +3,51 @@
     <!-- Título -->
     <v-row class="mb-4">
       <v-col>
-        <v-card>
-          <v-card-title class="headline">
-            Lista de Compras
-          </v-card-title>
+        <v-card style="background-color: #f0f0f0;">
+          <v-row align="center" no-gutters>
+            <!-- Coluna para a imagem -->
+            <v-col cols="auto" class="ml-3">
+              <img src="@/assets/logo.ico" alt="Logo" style="width: 50px; height: 50px;">
+            </v-col>
+            <!-- Coluna para o título -->
+            <v-col>
+              <v-card-title class="headline text-uppercase">
+                Lista de Compras
+              </v-card-title>
+            </v-col>
+          </v-row>
         </v-card>
       </v-col>
     </v-row>
 
-    <!-- Lista de Itens -->
+    <!-- Lista de Itens Agrupados por Categoria -->
     <v-row>
       <v-col>
-        <v-card>
+        <v-card
+          v-for="(group, category) in groupedItems"
+          :key="category"
+          class="mb-4"
+          :style="{ backgroundColor: categoryColors[category] }"
+        >
+          <v-card-title class="headline">{{ category }}</v-card-title>
           <v-list>
-            <v-list-item v-for="(item, id) in items" :key="id">
+            <v-list-item v-for="item in group" :key="item.id">
               <v-row align="center" no-gutters>
+                <!-- Ícone da Categoria -->
+                <v-col cols="auto" class="mr-2">
+                  <v-icon>{{ getCategoryIcon(item.category) }}</v-icon>
+                </v-col>
                 <!-- Nome do Item -->
                 <v-col>
                   <v-list-item-title>{{ item.name }}</v-list-item-title>
                 </v-col>
-
                 <!-- Botões de Editar e Excluir -->
                 <v-col cols="auto" class="d-flex" style="gap: 8px;">
-                  <v-btn density="compact" icon @click="editItem(id, item.name)">
-                    <v-icon>mdi-pencil</v-icon>
+                  <v-btn variant="text" density="compact" icon @click="editItem(item.id, item.name, item.category)">
+                    <v-icon>mdi-pencil-outline</v-icon>
                   </v-btn>
-
-                  <v-btn density="compact" icon color="red" @click="removeItem(id)">
-                    <v-icon>mdi-delete</v-icon>
+                  <v-btn variant="text" density="compact" icon color="red" @click="removeItem(item.id)">
+                    <v-icon>mdi-window-close</v-icon>
                   </v-btn>
                 </v-col>
               </v-row>
@@ -45,6 +62,13 @@
       <v-card>
         <v-card-title>Adicionar Novo Item</v-card-title>
         <v-card-text>
+          <v-select
+            v-model="newItemCategory"
+            :items="categories"
+            label="Categoria"
+            outlined
+            dense
+          ></v-select>
           <v-text-field
             v-model="newItem"
             label="Novo item"
@@ -65,6 +89,13 @@
       <v-card>
         <v-card-title>Editar Item</v-card-title>
         <v-card-text>
+          <v-select
+            v-model="editedItem.category"
+            :items="categories"
+            label="Categoria"
+            outlined
+            dense
+          ></v-select>
           <v-text-field
             v-model="editedItem.name"
             label="Editar item"
@@ -107,74 +138,73 @@
     >
       {{ snackbar.message }}
     </v-snackbar>
-
   </v-container>
 </template>
 
 <script>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { database, ref as dbRef, push, onValue, remove, update } from '../firebase';
 
 export default {
   setup() {
     const items = ref({});
     const newItem = ref('');
+    const newItemCategory = ref('Comida'); // Categoria padrão
     const showInput = ref(false);
     const showEdit = ref(false);
-    const editedItem = ref({ id: null, name: '' });
+    const editedItem = ref({ id: null, name: '', category: '' });
     const snackbar = ref({
       show: false,
       message: '',
       color: 'success',
     });
 
+    const categories = ["Bebida", "Comida", "Higiene Pessoal", "Produto de Limpeza", "Diversos"];
     const shoppingListRef = dbRef(database, 'shoppingList');
 
-    // Solicitar permissão para notificações ao iniciar
-    const requestNotificationPermission = () => {
-      if ("Notification" in window) {
-        Notification.requestPermission().then(permission => {
-          if (permission === "granted") {
-            console.log("Permissão concedida para notificações.");
-          } else {
-            console.log("Permissão negada.");
-          }
-        });
-      }
+    // Cores para cada categoria
+    const categoryColors = {
+      "Bebida": "#FFCCBC", // Laranja claro
+      "Comida": "#C8E6C9", // Verde claro
+      "Higiene Pessoal": "#B3E5FC", // Azul claro
+      "Produto de Limpeza": "#FFF9C4", // Amarelo claro
+      "Diversos": "#E1BEE7", // Roxo claro
     };
 
-    // Exibir notificação persistente
-    const showPersistentNotification = (title, body) => {
-      if ("Notification" in window && Notification.permission === "granted") {
-        if (navigator.serviceWorker) {
-          navigator.serviceWorker.ready.then(registration => {
-            registration.showNotification(title, {
-              body: body,
-              icon: "/logo.png",
-              badge: "/badge.png",
-              requireInteraction: true, // Mantém a notificação visível
-            });
-          });
-        } else {
-          new Notification(title, { body: body, requireInteraction: true });
+    // Agrupar itens por categoria
+    const groupedItems = computed(() => {
+      const grouped = {};
+      for (const [id, item] of Object.entries(items.value)) {
+        if (!grouped[item.category]) {
+          grouped[item.category] = [];
         }
+        grouped[item.category].push({ id, ...item });
+      }
+      return grouped;
+    });
+
+    // Obter ícone da categoria
+    const getCategoryIcon = (category) => {
+      switch (category) {
+        case "Bebida":
+          return "mdi-beer-outline";
+        case "Comida":
+          return "mdi-silverware-fork-knife";
+        case "Higiene Pessoal":
+          return "mdi-toothbrush-paste";
+        case "Produto de Limpeza":
+          return "mdi-spray-bottle";
+        case "Diversos":
+          return "mdi-dots-horizontal";
+        default:
+          return "mdi-help";
       }
     };
 
-    // Ouvir mudanças no Firebase e mostrar notificações
+    // Carregar itens do Firebase
     onMounted(() => {
-      requestNotificationPermission();
-
       onValue(shoppingListRef, (snapshot) => {
-        const data = snapshot.val() || {};
-        const previousItems = { ...items.value };
-        items.value = data;
-
-        // Detectar novo item adicionado
-        const newItemKey = Object.keys(data).find(key => !(key in previousItems));
-        if (newItemKey) {
-          showPersistentNotification("Novo item adicionado", data[newItemKey].name);
-        }
+        items.value = snapshot.val() || {};
       });
     });
 
@@ -182,11 +212,14 @@ export default {
     const addItem = () => {
       if (newItem.value.trim()) {
         const itemName = newItem.value;
-        push(shoppingListRef, { name: itemName });
+        push(shoppingListRef, { 
+          name: itemName, 
+          category: newItemCategory.value 
+        });
         newItem.value = '';
+        newItemCategory.value = categories[0]; // Resetar para a categoria padrão
         showInput.value = false;
         showSnackbar(`"${itemName}" adicionado!`, "success");
-        showPersistentNotification("Item Adicionado", itemName);
       } else {
         showSnackbar("Digite um item válido.", "error");
       }
@@ -199,15 +232,18 @@ export default {
     };
 
     // Abrir diálogo de edição
-    const editItem = (id, name) => {
-      editedItem.value = { id, name };
+    const editItem = (id, name, category) => {
+      editedItem.value = { id, name, category };
       showEdit.value = true;
     };
 
     // Atualizar item
     const updateItem = () => {
       if (editedItem.value.name.trim()) {
-        update(dbRef(database, `shoppingList/${editedItem.value.id}`), { name: editedItem.value.name });
+        update(dbRef(database, `shoppingList/${editedItem.value.id}`), { 
+          name: editedItem.value.name, 
+          category: editedItem.value.category 
+        });
         showEdit.value = false;
         showSnackbar("Item atualizado!", "success");
       } else {
@@ -223,12 +259,17 @@ export default {
     return {
       items,
       newItem,
-      addItem,
-      removeItem,
-      snackbar,
+      newItemCategory,
       showInput,
       showEdit,
       editedItem,
+      snackbar,
+      categories,
+      groupedItems,
+      categoryColors,
+      getCategoryIcon,
+      addItem,
+      removeItem,
       editItem,
       updateItem,
     };
